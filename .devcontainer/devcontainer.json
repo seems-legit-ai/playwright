@@ -1,0 +1,43 @@
+// For format details, see https://aka.ms/devcontainer.json. For config options, see the
+// README at: https://github.com/devcontainers/templates/tree/main/src/ubuntu
+{
+	"name": "Ubuntu",
+	"image": "mcr.microsoft.com/devcontainers/base:noble",
+	"containerEnv": {
+		// for X11 forwarding
+		"DISPLAY": "docker.for.mac.host.internal:0"
+	},
+	"features": {
+		// Node (JS/TS)
+		"ghcr.io/devcontainers/features/node:1": {},
+		// Python
+		"ghcr.io/devcontainers/features/python:1": {},
+		"ghcr.io/jsburckhardt/devcontainer-features/uv:1": {},
+		"ghcr.io/jsburckhardt/devcontainer-features/ruff:1": {},
+		"ghcr.io/devcontainers-extra/features/black:2": {}
+	},
+	"customizations": {
+		"vscode": {
+			"extensions": [
+				// js/ts
+				"dbaeumer.vscode-eslint",
+				"christian-kohler.path-intellisense",
+				"christian-kohler.npm-intellisense",
+				// python
+				"ms-python.python",
+				"ms-python.vscode-pylance",
+				"ms-python.black-formatter",
+				"ms-python.debugpy",
+				"charliermarsh.ruff",
+				// gemini
+				"google.gemini-code-assist",
+				// claude
+				"anthropic.claude-code"
+			]
+		}
+	},
+	"env": {
+		"CLAUD": "bash .devcontainer/bootstrap.sh"
+	},
+	"postCreateCommand": "bash .devcontainer/bootstrap.sh"
+}
