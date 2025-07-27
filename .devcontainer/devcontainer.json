@@ -36,8 +36,8 @@
 			]
 		}
 	},
-	"env": {
-		"CLAUD": "bash .devcontainer/bootstrap.sh"
+	"remoteEnv": {
+		"ANTHROPIC_API_KEY": "${ANTHROPIC_API_KEY}"
 	},
 	"postCreateCommand": "bash .devcontainer/bootstrap.sh"
 }
