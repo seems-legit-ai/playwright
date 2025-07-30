@@ -86,6 +86,37 @@ Examples:
   $ codegen --target=python
   $ codegen -b webkit https://example.com`);
 
+program
+    .command('codegenRemote [url]')
+    .description('connect to remote CDP and generate code for user actions')
+    .option('-o, --output <file name>', 'saves the generated script to a file')
+    .option('--target <language>', `language to generate, one of javascript, playwright-test, python, python-async, python-pytest, csharp, csharp-mstest, csharp-nunit, java, java-junit`, codegenId())
+    .option('--test-id-attribute <attributeName>', 'use the specified attribute to generate data test ID selectors')
+    .option('--cdp-endpoint <endpoint>', 'CDP endpoint URL (e.g. http://localhost:9222)')
+    .option('--device <deviceName>', 'emulate device, for example  "iPhone 11"')
+    .option('--color-scheme <scheme>', 'emulate preferred color scheme, "light" or "dark"')
+    .option('--geolocation <coordinates>', 'specify geolocation coordinates, for example "37.819722,-122.478611"')
+    .option('--lang <language>', 'specify language / locale, for example "en-GB"')
+    .option('--timezone <time zone>', 'time zone to emulate, for example "Europe/Rome"')
+    .option('--timeout <timeout>', 'timeout for Playwright actions in milliseconds, no timeout by default')
+    .option('--user-agent <ua string>', 'specify user agent string')
+    .option('--viewport-size <size>', 'specify browser viewport size in pixels, for example "1280, 720"')
+    .action(function(url, options) {
+      codegenRemote(options, url).catch(error => {
+        if (process.env.PWTEST_CLI_AUTO_EXIT_WHEN) {
+          // Tests with PWTEST_CLI_AUTO_EXIT_WHEN might close page too fast, resulting
+          // in a stray navigation aborted error. We should ignore it.
+        } else {
+          throw error;
+        }
+      });
+    }).addHelpText('afterAll', `
+Examples:
+
+  $ codegenRemote --cdp-endpoint=http://localhost:9222
+  $ codegenRemote --cdp-endpoint=http://localhost:9222 --target=python
+  $ codegenRemote --cdp-endpoint=http://localhost:9222 https://example.com`);
+
 function suggestedBrowsersToInstall() {
   return registry.executables().filter(e => e.installType !== 'none' && e.type !== 'tool').map(e => e.name).join(', ');
 }
@@ -661,6 +692,112 @@ async function codegen(options: Options & { target: string, output?: string, tes
     handleSIGINT: false,
   });
   await openPage(context, url);
+}
+
+async function codegenRemote(options: { target: string, output?: string, testIdAttribute?: string, cdpEndpoint?: string, device?: string, colorScheme?: string, geolocation?: string, lang?: string, timezone?: string, timeout?: string, userAgent?: string, viewportSize?: string }, url: string | undefined) {
+  const { target: language, output: outputFile, testIdAttribute: testIdAttributeName, cdpEndpoint } = options;
+
+  if (!cdpEndpoint)
+    throw new Error('CDP endpoint is required. Use --cdp-endpoint to specify the endpoint URL (e.g. http://localhost:9222)');
+
+  // Connect to remote CDP
+  const browser = await playwright.chromium.connectOverCDP(cdpEndpoint);
+
+  let closingBrowser = false;
+  async function closeBrowser() {
+    if (closingBrowser)
+      return;
+    closingBrowser = true;
+    await browser.close();
+  }
+
+  process.on('SIGINT', async () => {
+    await closeBrowser();
+    gracefullyProcessExitDoNotHang(130);
+  });
+
+  // Get the default context (CDP connections come with an existing context)
+  const contexts = browser.contexts();
+  let context;
+
+  if (contexts.length > 0) {
+    context = contexts[0];
+  } else {
+    // Create a new context if none exists
+    const contextOptions: any = {};
+
+    // Apply context options similar to the regular codegen
+    if (options.device && playwright.devices[options.device])
+      Object.assign(contextOptions, playwright.devices[options.device]);
+
+    if (options.viewportSize) {
+      try {
+        const [width, height] = options.viewportSize.split(',').map(n => +n);
+        if (isNaN(width) || isNaN(height))
+          throw new Error('bad values');
+        contextOptions.viewport = { width, height };
+      } catch (e) {
+        throw new Error('Invalid viewport size format: use "width,height", for example --viewport-size="800,600"');
+      }
+    }
+
+    if (options.geolocation) {
+      try {
+        const [latitude, longitude] = options.geolocation.split(',').map(n => parseFloat(n.trim()));
+        contextOptions.geolocation = { latitude, longitude };
+        contextOptions.permissions = ['geolocation'];
+      } catch (e) {
+        throw new Error('Invalid geolocation format, should be "lat,long". For example --geolocation="37.819722,-122.478611"');
+      }
+    }
+
+    if (options.userAgent)
+      contextOptions.userAgent = options.userAgent;
+
+    if (options.lang)
+      contextOptions.locale = options.lang;
+
+    if (options.colorScheme)
+      contextOptions.colorScheme = options.colorScheme as 'dark' | 'light';
+
+    if (options.timezone)
+      contextOptions.timezoneId = options.timezone;
+
+    context = await browser.newContext(contextOptions);
+  }
+
+  // Set timeout
+  const timeout = options.timeout ? parseInt(options.timeout, 10) : 0;
+  context.setDefaultTimeout(timeout);
+  context.setDefaultNavigationTimeout(timeout);
+
+  // Handle page close events
+  context.on('page', page => {
+    page.on('dialog', () => {});  // Prevent dialogs from being automatically dismissed.
+    page.on('close', () => {
+      const hasPage = browser.contexts().some(context => context.pages().length > 0);
+      if (hasPage)
+        return;
+      closeBrowser().catch(() => {});
+    });
+  });
+
+  dotenv.config({ path: 'playwright.env' });
+
+  // Enable the recorder
+  await (context as any)._enableRecorder({
+    language,
+    launchOptions: {}, // Empty for CDP connections
+    contextOptions: {},
+    device: options.device,
+    mode: 'recording',
+    testIdAttributeName,
+    outputFile: outputFile ? path.resolve(outputFile) : undefined,
+    handleSIGINT: false,
+  });
+
+  // Open the page if URL is provided, otherwise use existing page or create new one
+  await openPage(context as any, url);
 }
 
 async function waitForPage(page: Page, captureOptions: CaptureOptions) {

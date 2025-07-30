@@ -8,12 +8,26 @@
         {
             "type": "node",
             "request": "launch",
-            "name": "Debug Playwright UI",
+            "name": "Debug Playwright Codegen",
             "skipFiles": [
                 "<node_internals>/**"
             ],
             "program": "packages/playwright/cli.js",
-            "args": ["test", "--ui"]
-        }
+            "args": ["codegen"]
+        },
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "Debug Playwright CodegenRemote",
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "program": "packages/playwright/cli.js",
+            "args": [
+                "codegenRemote",
+                "--cdp-endpoint",
+                "ws://host.docker.internal:9222"
+            ]
+        },
     ]
 }
